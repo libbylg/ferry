@@ -1,0 +1,6 @@
+required tcl/8.4        linux/aarch64
+required readline/8.4   linux/aarch64
+
+# frerry install <DIR> -g qmake
+#freeybuild.pri
+

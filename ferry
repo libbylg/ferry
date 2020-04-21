@@ -1,0 +1,127 @@
+#!/bin/bash
+
+
+SELFDIR=$(cd $(dirname ""$0);pwd)
+
+
+# $1  <PKGNAME>/<PKGVERSION>
+# #2  <PKGPLATFORM>/<PKGARCH>
+function required()
+{
+    local PKGNAMEVER=$1
+    local PKGPLTARCH=$2
+
+    local PKGNAME=$(echo        "${PKGNAMEVER}" | awk -F '/' '{print $1}')
+    local PKGVERSION=$(echo     "${PKGNAMEVER}" | awk -F '/' '{print $2}')
+    local PKGPLATFORM=$(echo    "${PKGPLTARCH}" | awk -F '/' '{print $1}')
+    local PKGARCH=$(echo        "${PKGPLTARCH}" | awk -F '/' '{print $2}')
+
+    local pkgdir="${FERRY_REPO_ROOT}/${PKGNAME}-${PKGVERSION}/${PKGPLATFORM}-${PKGARCH}"
+    if [[ ! -d "${pkgdir}" ]]; then
+        echo    "[Fail] '${PKGNAMEVER} ${PKGPLTARCH}' : Can not install package under '${FERRY_REPO_ROOT}'"
+        return  1
+    fi
+
+    local files=$(cd "${pkgdir}"; ls "${pkgdir}")
+    for f in ${files} ; do
+        
+        echo    "[ OK ] '${PKGNAMEVER} ${PKGPLTARCH}'"
+        return  1
+    done
+
+}
+export required
+
+
+function help()
+{
+	echo	"Usage:"
+	echo	""
+}
+
+
+function init()
+{
+    export FERRY_REPO_ROOT=$(cd "~/.ferry-repo";pwd)
+    export FERRY_DEPS_ROOT=$(cd "~/deps";pwd)
+
+    local rcDir=$(pwd)
+    while [[ ! -f "${rcDir}/.ferryrc" ]]; do
+        if [[ "${rcDir}" == "" ]] || [[ "${rcDir}" == "/" ]]; then
+            echo    "Can not locate to entry script file: '.ferryrc'"
+            return  1
+        fi
+        rcDir=$(dirname "${rcDir}")
+    done
+
+    source "${rcDir}/.ferryrc"
+    RESULT=$?
+    if [[ ${RESULT} -ne 0 ]]; then
+        echo    "Load initialize file failed(${RESULT}): '${rcDir}/.ferryrc'"
+        return  2
+    fi
+
+    return  0
+}
+
+
+#	$1	install
+#	$2	[<DEFINE-DIR>|<DEFINE-FILE>]
+function install()
+{
+    local defineFiles=""
+    if [[ $# -eq 1 ]]; then
+        defineFiles=$(ls $(pwd) | grep -E '.*\.ferry')
+    fi
+
+    if [[ -f "$2" ]]; then
+        defineFiles="$2"
+    elif [[ -d "$2" ]]; then
+        defineFiles=$(ls "$2" | grep -E '.*\.ferry')
+    fi
+
+    init
+    RESULT=$?
+    if [[ ${RESULT} -ne 0 ]]; then
+        echo    "Initialize ferry failed(${RESULT})"
+        return  2
+    fi
+
+    for f in ${defineFiles} ; do
+        "${f}"
+        RESULT=$?
+        if [[ ${RESULT} -ne 0 ]]; then
+            return  2
+        fi
+    done
+
+    return  0
+}
+
+function main()
+{
+    if [[ $# -lt 1 ]]; then
+        echo    "Missing parameters, type -h for help"
+        return  1
+    fi
+
+    if [[ $# -gt 0 ]]; then
+        if [[ "$1" == "-h" ]] || [[ "$1" == "--help" ]]; then
+            help    "$@"
+            return  "$?"
+        fi
+    fi
+
+    if [[ "$1" == "install" ]]; then
+        install "$@"
+        return  "$?"
+    fi
+
+    echo    "Unsupported parameter '$1'"
+    return  1
+}
+
+
+main  "$@"
+exit  "$?"
+
