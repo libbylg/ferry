@@ -2,6 +2,46 @@
 
 
 SELFDIR=$(cd $(dirname ""$0);pwd)
+WORKDIR=$(pwd)
+
+export REASON
+
+#   $1  packageFile
+#   $2  installDir
+function decompress_package()
+{
+    local packageFile="$1"
+    local installDir="$2"
+
+    cd  "${installDir}"
+    RESULT=$?
+    if [[ ${RESULT} -ne 0 ]]; then
+        REASON="Can not access the install directory(${RESULT}): '${installDir}'"
+        return  2
+    fi
+
+    if [[ "${packageFile}" =~ .*\.tar$ ]]; then
+        tar xf  "${packageFile}"
+        RESULT=$?
+    elif [[ "${packageFile}" =~ .*\.tar\.gz$ ]]; then
+        tar xfz "${packageFile}"
+        RESULT=$?
+    elif [[ "${packageFile}" =~ .*\.zip$ ]]; then
+        unzip   "${packageFile}"
+        RESULT=$?
+    else
+        REASON="Unsupported package format(${RESULT}): '${packageFile}'"
+        return  3
+    fi
+
+    RESULT=$?
+    if [[ ${RESULT} -ne 0 ]]; then
+        REASON="Install package failed(${RESULT}): '${packageFile}' -> '${installDir}'"
+        return  4
+    fi
+
+    return  0
+}
 
 
 # $1  <PKGNAME>/<PKGVERSION>
@@ -24,10 +64,24 @@ function required()
 
     local files=$(cd "${pkgdir}"; ls "${pkgdir}")
     for f in ${files} ; do
-        
-        echo    "[ OK ] '${PKGNAMEVER} ${PKGPLTARCH}'"
-        return  1
+        if [[ "${f}" == "." ]] || [[ "${f}" == ".." ]]; then
+            continue
+        fi
+
+        rm -rf   "${FERRY_DEPS_ROOT}/${PKGNAME}"
+        mkdir -p "${FERRY_DEPS_ROOT}/${PKGNAME}"
+        REASON=""
+        decompresss_package  "${pkgdir}/${f}" "${FERRY_DEPS_ROOT}/${PKGNAME}"
+        RESULT=$?
+        if [[ ${RESULT} -ne 0 ]]; then
+            echo    "[Fail] '${PKGNAMEVER} ${PKGPLTARCH}' : '${f}' : ${REASON}"
+            return  2
+        else
+            echo    "[ OK ] '${PKGNAMEVER} ${PKGPLTARCH}' : '${f}'"
+        fi
     done
+
+    return  0
 
 }
 export required
@@ -42,23 +96,45 @@ function help()
 
 function init()
 {
-    export FERRY_REPO_ROOT=$(cd "~/.ferry-repo";pwd)
-    export FERRY_DEPS_ROOT=$(cd "~/deps";pwd)
+    #   导出变量
+    export FERRY_REPO_ROOT=""
+    export FERRY_DEPS_ROOT=""
 
-    local rcDir=$(pwd)
+    #   确定rc文件的位置
+    local rcDir=${WORKDIR}
     while [[ ! -f "${rcDir}/.ferryrc" ]]; do
         if [[ "${rcDir}" == "" ]] || [[ "${rcDir}" == "/" ]]; then
             echo    "Can not locate to entry script file: '.ferryrc'"
-            return  1
+            rcDir=""
+            break
         fi
         rcDir=$(dirname "${rcDir}")
     done
 
-    source "${rcDir}/.ferryrc"
-    RESULT=$?
-    if [[ ${RESULT} -ne 0 ]]; then
-        echo    "Load initialize file failed(${RESULT}): '${rcDir}/.ferryrc'"
-        return  2
+    #   加载rc文件
+    if [[ -d "${rcDir}" ]] && [[  ]]; then
+        source "${rcDir}/.ferryrc"
+        RESULT=$?
+        if [[ ${RESULT} -ne 0 ]]; then
+            echo    "Load initialize file failed(${RESULT}): '${rcDir}/.ferryrc'"
+            return  2
+        fi
+    fi
+
+    #   对严重错误配置进行校验
+    if [[ "${FERRY_REPO_ROOT}" == "/" ]]; then
+        echo    "Unsupported use the '/' as the local repository"
+        return  3
+    fi
+
+    #   对缺省进行矫正
+    if [[ "${FERRY_REPO_ROOT}" == "" ]]; then
+        FERRY_REPO_ROOT=$(cd "~/.ferry-repo";pwd)
+    fi
+
+    #   对缺省进行矫正
+    if [[ "${FERRY_REPO_ROOT}" == "" ]]; then
+        FERRY_DEPS_ROOT="${WORKDIR}"
     fi
 
     return  0
@@ -71,7 +147,7 @@ function install()
 {
     local defineFiles=""
     if [[ $# -eq 1 ]]; then
-        defineFiles=$(ls $(pwd) | grep -E '.*\.ferry')
+        defineFiles=$(ls "${WORKDIR}" | grep -E '.*\.ferry')
     fi
 
     if [[ -f "$2" ]]; then
