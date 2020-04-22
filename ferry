@@ -4,7 +4,9 @@
 SELFDIR=$(cd $(dirname ""$0);pwd)
 WORKDIR=$(pwd)
 
-export REASON
+
+export REASON=""
+
 
 #   $1  packageFile
 #   $2  installDir
@@ -173,6 +175,7 @@ function install()
 
     return  0
 }
+
 
 function main()
 {
