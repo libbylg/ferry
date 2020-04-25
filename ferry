@@ -10,7 +10,7 @@ export REASON=""
 
 #   $1  packageFile
 #   $2  installDir
-function decompress_package()
+function decompressPackage()
 {
     local packageFile="$1"
     local installDir="$2"
@@ -44,23 +44,22 @@ function decompress_package()
 
     return  0
 }
+#export -f decompressPackage
 
 
 # $1  <PKGNAME>/<PKGVERSION>
-# #2  <PKGPLATFORM>/<PKGARCH>
+# #2  <PKGTARGET>
 function required()
 {
     local PKGNAMEVER=$1
-    local PKGPLTARCH=$2
+    local PKGTARGET=$2
 
-    local PKGNAME=$(echo        "${PKGNAMEVER}" | awk -F '/' '{print $1}')
-    local PKGVERSION=$(echo     "${PKGNAMEVER}" | awk -F '/' '{print $2}')
-    local PKGPLATFORM=$(echo    "${PKGPLTARCH}" | awk -F '/' '{print $1}')
-    local PKGARCH=$(echo        "${PKGPLTARCH}" | awk -F '/' '{print $2}')
+    local PKGNAME=$(echo        "${PKGNAMEVER}" | awk -F '@' '{print $1}')
+    local PKGVERSION=$(echo     "${PKGNAMEVER}" | awk -F '@' '{print $2}')
 
-    local pkgdir="${FERRY_REPO_ROOT}/${PKGNAME}-${PKGVERSION}/${PKGPLATFORM}-${PKGARCH}"
+    local pkgdir="${FERRY_REPO_ROOT}/${PKGNAME}/${PKGVERSION}/${PKGTARGET}"
     if [[ ! -d "${pkgdir}" ]]; then
-        echo    "[Fail] '${PKGNAMEVER} ${PKGPLTARCH}' : Can not install package under '${FERRY_REPO_ROOT}'"
+        echo    "[Fail] '${PKGNAMEVER} ${PKGTARGET}' : Can not install package under '${FERRY_REPO_ROOT}'"
         return  1
     fi
 
@@ -73,20 +72,20 @@ function required()
         rm -rf   "${FERRY_DEPS_ROOT}/${PKGNAME}"
         mkdir -p "${FERRY_DEPS_ROOT}/${PKGNAME}"
         REASON=""
-        decompresss_package  "${pkgdir}/${f}" "${FERRY_DEPS_ROOT}/${PKGNAME}"
+        decompressPackage  "${pkgdir}/${f}" "${FERRY_DEPS_ROOT}/${PKGNAME}"
         RESULT=$?
         if [[ ${RESULT} -ne 0 ]]; then
-            echo    "[Fail] '${PKGNAMEVER} ${PKGPLTARCH}' : '${f}' : ${REASON}"
+            echo    "[Fail] '${PKGNAMEVER} ${PKGTARGET}' : '${f}' : ${REASON}"
             return  2
         else
-            echo    "[ OK ] '${PKGNAMEVER} ${PKGPLTARCH}' : '${f}'"
+            echo    "[ OK ] '${PKGNAMEVER} ${PKGTARGET}' : '${f}'"
         fi
     done
 
     return  0
 
 }
-export required
+export -f required
 
 
 function help()
@@ -114,7 +113,7 @@ function init()
     done
 
     #   加载rc文件
-    if [[ -d "${rcDir}" ]] && [[  ]]; then
+    if [[ -d "${rcDir}" ]]; then
         source "${rcDir}/.ferryrc"
         RESULT=$?
         if [[ ${RESULT} -ne 0 ]]; then
@@ -131,6 +130,9 @@ function init()
 
     #   对缺省进行矫正
     if [[ "${FERRY_REPO_ROOT}" == "" ]]; then
+        if [[ ! -d "~/.ferry-rep" ]]; then
+            mkdir -p "~/.ferry-rep"
+        fi
         FERRY_REPO_ROOT=$(cd "~/.ferry-repo";pwd)
     fi
 
@@ -147,15 +149,19 @@ function init()
 #	$2	[<DEFINE-DIR>|<DEFINE-FILE>]
 function install()
 {
+    local defineDir=""
     local defineFiles=""
     if [[ $# -eq 1 ]]; then
-        defineFiles=$(ls "${WORKDIR}" | grep -E '.*\.ferry')
+        defineFiles=$(ls "${WORKDIR}" | grep -E '.*\.ferry$')
+        defineDir="${WORKDIR}"
     fi
 
     if [[ -f "$2" ]]; then
         defineFiles="$2"
+        defineDir=$(cd $(dirname "$2");pwd)
     elif [[ -d "$2" ]]; then
         defineFiles=$(ls "$2" | grep -E '.*\.ferry')
+        defineDir=$(cd "$2";pwd)
     fi
 
     init
@@ -166,11 +172,24 @@ function install()
     fi
 
     for f in ${defineFiles} ; do
-        "${f}"
-        RESULT=$?
-        if [[ ${RESULT} -ne 0 ]]; then
-            return  2
-        fi
+        chmod +x "${defineDir}/${f}"
+        dos2unix "${defineDir}/${f}"
+        cat "${defineDir}/${f}" | while read line ; do
+            if [[ "${line}" =~ ^\w*#.* ]]; then
+                continue
+            fi
+
+            declare -a fields
+            fields=($(echo "${line}"))
+            if [[ "${fields[0]}" == "required" ]]; then
+                required ${fields[@]:1}
+                RESULT=$?
+                if [[ ${RESULT} -ne 0 ]]; then
+                    return  2
+                fi
+            fi
+
+        done
     done
 
     return  0
